@@ -12,8 +12,10 @@ services:
             - AWS_SECRET_ACCESS_KEY=ENTER-YOUR-SECRET-KEY-HERE
             - AWS_BUCKET=bucket-name
             - AWS_REGION=us-east-2
+            - AWS_CLEANUP_FILES=yes/no
             - NOTION_TOKEN=notion_secret
             - NOTION_DATABASE_ID=notion-database-id
+            - NOTION_IMAGE_OVERRIDE_ID=notion-image-override-database-id
             - GoogleAPIKey=Google-Books-API-Key
             - USE_PUSHBULLET=yes/no
             - PB_TOKEN=pushbullet_access_token
