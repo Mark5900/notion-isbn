@@ -413,18 +413,23 @@ def get_book_cover_from_openlibrary(isbn):
         f"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&jscmd=data&format=json"
     )
 
-    response = requests.get(url)
+    try:
+        response = requests.get(url, timeout=10)
 
-    if response.status_code == 200:
-        book_info = response.json().get(f"ISBN:{isbn}", {})
-        openlibrary_ids = book_info.get("identifiers", {}).get("openlibrary", [])
+        if response.status_code == 200:
+            book_info = response.json().get(f"ISBN:{isbn}", {})
+            openlibrary_ids = book_info.get("identifiers", {}).get("openlibrary", [])
 
-        if openlibrary_ids:
-            return f"https://covers.openlibrary.org/b/olid/{openlibrary_ids[0]}-L.jpg"
+            if openlibrary_ids:
+                return f"https://covers.openlibrary.org/b/olid/{openlibrary_ids[0]}-L.jpg"
+            else:
+                logging.info("No openlibrary ID found.")
         else:
-            logging.info("No openlibrary ID found.")
-    else:
-        logging.info(f"Failed to retrieve data. Status code: {response.status_code}")
+            logging.info(f"Failed to retrieve data. Status code: {response.status_code}")
+    except requests.exceptions.Timeout:
+        logging.warning(f"Timeout connecting to OpenLibrary for ISBN {isbn}")
+    except requests.exceptions.RequestException as e:
+        logging.warning(f"Error connecting to OpenLibrary for ISBN {isbn}: {e}")
 
 
 def get_image_override_pages():
@@ -447,27 +452,40 @@ def get_image_override_pages():
     logging.info("Checking for image overrides...")
     results = []
 
-    try:
-        response = requests.post(url, json=payload, headers=NOTION_HEADERS)
-        response.raise_for_status()
-        data = response.json()
+    for attempt in range(3):
+        try:
+            response = requests.post(url, json=payload, headers=NOTION_HEADERS)
+            if response.status_code == 404:
+                if attempt < 2:
+                    logging.warning(f"Image override database returned 404, retrying in 5s (attempt {attempt + 1}/3)...")
+                    time.sleep(5)
+                    continue
+                logging.warning("Image override database not found (404). Check that IMAGE_OVERRIDE_ID is correct and the Notion integration has access to it.")
+                return results
+            response.raise_for_status()
+            data = response.json()
 
-        if "error" in data:
-            logging.error(f"Notion API Error: {data['error']}")
+            if "error" in data:
+                logging.error(f"Notion API Error: {data['error']}")
+                return results
+
+            results.extend(data["results"])
+            logging.info(f"Found {len(results)} image override entries to process")
+
+            while data.get("has_more"):
+                payload["start_cursor"] = data["next_cursor"]
+                response = requests.post(url, json=payload, headers=NOTION_HEADERS)
+                data = response.json()
+                results.extend(data["results"])
+
             return results
 
-        results.extend(data["results"])
-        logging.info(f"Found {len(results)} image override entries to process")
-
-        while data.get("has_more"):
-            payload["start_cursor"] = data["next_cursor"]
-            response = requests.post(url, json=payload, headers=NOTION_HEADERS)
-            data = response.json()
-            results.extend(data["results"])
-
-    except Exception as e:
-        logging.error(f"Error getting image overrides: {e}")
-        send_push("Image Override Error", f"Error retrieving override entries: {str(e)}")
+        except Exception as e:
+            if attempt < 2:
+                logging.warning(f"Error getting image overrides (attempt {attempt + 1}/3): {e}, retrying in 5s...")
+                time.sleep(5)
+            else:
+                logging.error(f"Error getting image overrides after 3 attempts: {e}")
 
     return results
 
