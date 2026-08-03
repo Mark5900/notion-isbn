@@ -80,6 +80,12 @@ def cleanup_unused_s3_images():
         notion_images = set()
         pages = get_pages()
 
+        # Safety check: if Notion returned no pages, the query likely failed.
+        # Deleting now would wipe in-use images, so abort the cleanup.
+        if not pages:
+            logging.warning("Notion returned no pages during cleanup — skipping deletion to avoid removing in-use images")
+            return
+
         for page in pages:
             # Check page cover (banner)
             if page.get("cover") and page["cover"].get("external"):
@@ -100,6 +106,12 @@ def cleanup_unused_s3_images():
                         notion_images.add(key)
 
         logging.info(f"Found {len(notion_images)} images used in Notion")
+
+        # Safety check: if S3 has images but we found no references in Notion,
+        # something went wrong fetching/parsing — don't delete anything.
+        if s3_images and not notion_images:
+            logging.warning("Found images in S3 but no references in Notion — skipping deletion as a safety measure")
+            return
 
         # Find images in S3 that are not used in Notion
         unused_images = s3_images - notion_images
@@ -181,24 +193,29 @@ def get_book(isbn):
 
         if book_data["totalItems"] > 0:
             book_info = book_data["items"][0]["volumeInfo"]
-            logging.info(f"Found {book_info.get('title', 'Unknown Title')} using Google Books API")
-            # Standardize the data
-            standardized_data = {
-                'title': book_info.get('title', ''),
-                'subtitle': book_info.get('subtitle', ''),
-                'authors': book_info.get('authors', []),
-                'published_date': book_info.get('publishedDate', ''),
-                'description': book_info.get('description', ''),
-                'publisher': book_info.get('publisher', ''),
-                'page_count': book_info.get('pageCount', 0),
-                'cover_url': None,
-            }
-            # Get cover image URL
-            if 'imageLinks' in book_info and 'thumbnail' in book_info['imageLinks']:
-                standardized_data['cover_url'] = book_info['imageLinks']['thumbnail']
+            google_title = book_info.get('title', '').strip()
+            # Skip placeholder/empty Google titles (e.g. "Untitled Project 1") and fall back to OpenLibrary
+            if google_title and not google_title.lower().startswith("untitled"):
+                logging.info(f"Found {google_title} using Google Books API")
+                # Standardize the data
+                standardized_data = {
+                    'title': book_info.get('title', ''),
+                    'subtitle': book_info.get('subtitle', ''),
+                    'authors': book_info.get('authors', []),
+                    'published_date': book_info.get('publishedDate', ''),
+                    'description': book_info.get('description', ''),
+                    'publisher': book_info.get('publisher', ''),
+                    'page_count': book_info.get('pageCount', 0),
+                    'cover_url': None,
+                }
+                # Get cover image URL
+                if 'imageLinks' in book_info and 'thumbnail' in book_info['imageLinks']:
+                    standardized_data['cover_url'] = book_info['imageLinks']['thumbnail']
+                else:
+                    standardized_data['cover_url'] = None
+                return standardized_data
             else:
-                standardized_data['cover_url'] = None
-            return standardized_data
+                logging.info(f"Google Books returned an unusable title ('{google_title}') for ISBN {isbn}, trying OpenLibrary API")
         else:
             logging.info("Book not found in Google Books API, trying OpenLibrary API")
     except requests.exceptions.RequestException as e:
@@ -640,10 +657,13 @@ def process_image_overrides():
 
 
 def update_notion(book_data, page_id, isbn):
-    title = book_data.get("title", "")
+    title = book_data.get("title", "").strip()
 
-    if "subtitle" in book_data:
-        title += f": {book_data['subtitle']}"
+    subtitle = book_data.get("subtitle", "").strip()
+    if subtitle:
+        # Strip a trailing colon on the title so we don't end up with "Title:: Subtitle"
+        title = title.rstrip(": ").strip()
+        title += f": {subtitle}"
     title = re.sub(r"\([^)]*\)", "", title)[:100]
 
     # Get cover URL with fallbacks
