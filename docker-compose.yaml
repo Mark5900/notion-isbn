@@ -1,7 +1,8 @@
 version: '3.9'
 services:
     notion-books:
-        image: allaboutduncan/notion-isbn:latest
+        build: .
+        image: notion-isbn:local
         container_name: notion-books
         restart: always
         ports:
@@ -17,5 +18,7 @@ services:
             - NOTION_DATABASE_ID=notion-database-id
             - NOTION_IMAGE_OVERRIDE_ID=notion-image-override-database-id
             - GoogleAPIKey=Google-Books-API-Key
+            - GOOGLE_COUNTRY=DK
+            - SCAN_INTERVAL=60
             - USE_PUSHBULLET=yes/no
             - PB_TOKEN=pushbullet_access_token

@@ -1,12 +1,7 @@
-###### Requirements without Version Specifiers ######
 requests
-python-dateutil
 schedule
 pillow
-boto3
 beautifulsoup4
+# optional: only needed with USE_AWS=yes / USE_PUSHBULLET=yes
+boto3
 pushbullet.py
-ndg-httpsclient
-pyopenssl
-pyasn1
-urllib3

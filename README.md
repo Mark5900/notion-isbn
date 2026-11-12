@@ -102,16 +102,28 @@ Copy the following and edit the environment variables
 
 ## Using the Application
 
-Once the application is running, you should be able to view the logs or in the console see the status, which should read...
-'Next scan scheduled...'
+Once the application is running, the log should read 'Scanning every 60 seconds...'.
 
-The app will check your Notion database every 60 seconds for new books. To create a new book:
+The app checks your Notion database every `SCAN_INTERVAL` seconds (default 60) for new books. To create a new book:
 
 1. Duplicate the [Notion Books_Template](https://allaboutduncan.notion.site/3db8f153c5734fa883ea28030255a9df?v=c946f182c52d41a0bde3e96a237fb2a4&pvs=4)
 2. Create a new database entry / book
-3. Enter "New Book" for the book title
-4. Enter the 10-digit or 13-digit ISBN
-5. Wait for the data to be popluated (when the process runs every 60-seconds)
+3. Give it a placeholder title: "New Book", "New Physical Book" or "New Digital Book" (any `New … Book`; change with `NEW_BOOK_PATTERN`)
+4. Enter the 10-digit or 13-digit ISBN (hyphens and spaces are fine; the check digit is validated)
+5. Wait for the data to be populated
+
+Data comes from Google Books (when `GoogleAPIKey` is set, using `GOOGLE_COUNTRY`, default `DK`), Open Library and [Libris](https://libris.kb.se) (the Swedish union catalogue, no key needed, good for Scandinavian editions); the first source with a value wins per field. Publisher and author names that only differ in case reuse the existing Notion option.
+
+With `USE_AWS=yes` the cover and a blurred banner are uploaded to S3 and books without a cover share `noCover.jpg` from the bucket. `AWS_CLEANUP_FILES=yes` deletes covers in S3 that no page uses any more (daily). `NOTION_IMAGE_OVERRIDE_ID` points to a database with `ISBN`, `Link` and a `Status` checkbox; unchecked rows replace that book's cover with the image from `Link`. Author can be a `multi_select`, `select` or text property; the app reads the database schema at startup. The page's `Type` is left as the template set it. An ISBN that finds nothing is retried after `RETRY_NOT_FOUND_HOURS` (default 6) instead of every scan.
+
+### Fill gaps in existing books
+
+```bash
+python main.py --backfill --dry-run   # show what would change
+python main.py --backfill             # fill empty / "Unknown ..." fields on every book with an ISBN
+```
+
+Backfill only fills Author, Publisher, Year, Pages, Summary and Cover when they are empty or say "Unknown"; it never overwrites data that is already there. Use `python main.py --once` to run a single scan for new books.
 
 ## Contributing
 
